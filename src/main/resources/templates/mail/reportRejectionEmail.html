@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+    <head>
+        <title th:text="#{email.activation.title}">Boogh activation</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <link rel="shortcut icon" th:href="@{|${baseUrl}/favicon.ico|}" />
+    </head>
+    <body style="direction: rtl">
+        <p th:text="#{email.activation.greeting(${user.login})}">
+            Dear
+        </p>
+        <p th:text="#{email.report.rejected.text1}">
+
+        </p>
+        <p>
+            <a th:with="url=(@{|${baseUrl}/report?id=${report.id}|})" th:href="${url}"
+               th:text="${url}">Your report</a>
+        </p>
+        <p>
+            <span th:text="#{email.activation.text2}">Regards, </span>
+            <br/>
+            <em th:text="#{email.signature}">Team Boogh.</em>
+        </p>
+    </body>
+</html>

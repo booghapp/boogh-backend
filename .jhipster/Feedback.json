@@ -1,0 +1,27 @@
+{
+    "fluentMethods": true,
+    "clientRootFolder": "",
+    "relationships": [],
+    "fields": [
+        {
+            "fieldName": "content",
+            "fieldType": "byte[]",
+            "fieldTypeBlobContent": "text",
+            "fieldValidateRules": [
+                "required"
+            ]
+        },
+        {
+            "fieldName": "createdOn",
+            "fieldType": "LocalDate"
+        }
+    ],
+    "changelogDate": "20190808183436",
+    "dto": "no",
+    "searchEngine": false,
+    "service": "no",
+    "entityTableName": "feedback",
+    "databaseType": "sql",
+    "jpaMetamodelFiltering": false,
+    "pagination": "no"
+}

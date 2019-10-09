@@ -1,0 +1,51 @@
+{
+    "fluentMethods": true,
+    "clientRootFolder": "",
+    "relationships": [
+        {
+            "relationshipName": "user",
+            "otherEntityName": "user",
+            "relationshipType": "one-to-one",
+            "relationshipValidateRules": [
+                "required"
+            ],
+            "otherEntityField": "id",
+            "ownerSide": true,
+            "otherEntityRelationshipName": "reporter"
+        }
+    ],
+    "fields": [
+        {
+            "fieldName": "about",
+            "fieldType": "byte[]",
+            "fieldTypeBlobContent": "text"
+        },
+        {
+            "fieldName": "karma",
+            "fieldType": "Integer"
+        },
+        {
+            "fieldName": "visibility",
+            "fieldType": "Boolean"
+        },
+        {
+            "fieldName": "moderator",
+            "fieldType": "Boolean"
+        },
+        {
+            "fieldName": "location",
+            "fieldType": "String"
+        },
+        {
+            "fieldName": "notificationsOn",
+            "fieldType": "Boolean"
+        }
+    ],
+    "changelogDate": "20181205200922",
+    "dto": "no",
+    "searchEngine": false,
+    "service": "serviceClass",
+    "entityTableName": "reporter",
+    "jpaMetamodelFiltering": true,
+    "pagination": "pagination"
+}

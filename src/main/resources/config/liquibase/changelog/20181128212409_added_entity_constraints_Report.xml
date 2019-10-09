@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.5.xsd">
+    <!--
+        Added the constraints for entity Report.
+    -->
+    <changeSet id="20181128212409-2" author="jhipster">
+        
+        <addForeignKeyConstraint baseColumnNames="reports_id"
+                                 baseTableName="report_favorite"
+                                 constraintName="fk_report_favorite_reports_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="report"/>
+        <addForeignKeyConstraint baseColumnNames="favorites_id"
+                                 baseTableName="report_favorite"
+                                 constraintName="fk_report_favorite_favorites_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="jhi_user"/>
+        
+        <addForeignKeyConstraint baseColumnNames="reports_id"
+                                 baseTableName="report_flag"
+                                 constraintName="fk_report_flag_reports_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="report"/>
+        <addForeignKeyConstraint baseColumnNames="flags_id"
+                                 baseTableName="report_flag"
+                                 constraintName="fk_report_flag_flags_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="jhi_user"/>
+        
+        <addForeignKeyConstraint baseColumnNames="reporter_id"
+                                 baseTableName="report"
+                                 constraintName="fk_report_reporter_id"
+                                 referencedColumnNames="id"
+                                 referencedTableName="jhi_user"/>
+
+    </changeSet>
+</databaseChangeLog>

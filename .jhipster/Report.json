@@ -1,0 +1,95 @@
+{
+    "fluentMethods": true,
+    "clientRootFolder": "",
+    "relationships": [
+        {
+            "relationshipName": "comments",
+            "otherEntityName": "comment",
+            "relationshipType": "one-to-many",
+            "otherEntityRelationshipName": "report"
+        },
+        {
+            "relationshipName": "reporter",
+            "otherEntityName": "user",
+            "relationshipType": "many-to-one",
+            "otherEntityField": "login",
+            "ownerSide": true,
+            "otherEntityRelationshipName": "report"
+        },
+        {
+            "relationshipName": "reportStatus",
+            "otherEntityName": "reportStatus",
+            "relationshipType": "one-to-many",
+            "otherEntityRelationshipName": "report"
+        },
+        {
+            "relationshipName": "parent",
+            "otherEntityName": "report",
+            "relationshipType": "many-to-one",
+            "otherEntityField": "id"
+        },
+        {
+            "relationshipName": "honk",
+            "otherEntityName": "honk",
+            "relationshipType": "one-to-many",
+            "otherEntityRelationshipName": "report"
+        }
+    ],
+    "fields": [
+        {
+            "fieldName": "type",
+            "fieldType": "ReportType",
+            "fieldValues": "ROAD_SAFETY,EDUCATION",
+            "fieldValidateRules": [
+                "required"
+            ]
+        },
+        {
+            "fieldName": "description",
+            "fieldType": "byte[]",
+            "fieldTypeBlobContent": "text",
+            "fieldValidateRules": [
+                "required"
+            ]
+        },
+        {
+            "fieldName": "state",
+            "fieldType": "ReportState",
+            "fieldValues": "PENDING,APPROVED,REJECTED",
+            "fieldValidateRules": [
+                "required"
+            ]
+        },
+        {
+            "fieldName": "anonymous",
+            "fieldType": "Boolean"
+        },
+        {
+            "fieldName": "latitude",
+            "fieldType": "Double"
+        },
+        {
+            "fieldName": "longitude",
+            "fieldType": "Double"
+        },
+        {
+            "fieldName": "date",
+            "fieldType": "LocalDate"
+        },
+        {
+            "fieldName": "title",
+            "fieldType": "String",
+            "fieldValidateRules": [
+                "required"
+            ]
+        }
+    ],
+    "changelogDate": "20181205202009",
+    "dto": "no",
+    "searchEngine": false,
+    "service": "serviceClass",
+    "entityTableName": "report",
+    "databaseType": "sql",
+    "jpaMetamodelFiltering": true,
+    "pagination": "pagination"
+}

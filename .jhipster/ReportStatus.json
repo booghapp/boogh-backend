@@ -1,0 +1,45 @@
+{
+    "fluentMethods": true,
+    "clientRootFolder": "",
+    "relationships": [
+        {
+            "relationshipName": "reporter",
+            "otherEntityName": "user",
+            "relationshipType": "many-to-one",
+            "relationshipValidateRules": [
+                "required"
+            ],
+            "otherEntityField": "login",
+            "ownerSide": true,
+            "otherEntityRelationshipName": "reportStatus"
+        },
+        {
+            "relationshipName": "report",
+            "otherEntityName": "report",
+            "relationshipType": "many-to-one",
+            "relationshipValidateRules": [
+                "required"
+            ],
+            "otherEntityField": "id"
+        }
+    ],
+    "fields": [
+        {
+            "fieldName": "saved",
+            "fieldType": "ReportStatusState",
+            "fieldValues": "UNSET,TRUE,FALSE"
+        },
+        {
+            "fieldName": "flagged",
+            "fieldType": "ReportStatusState",
+            "fieldValues": "UNSET,TRUE,FALSE"
+        }
+    ],
+    "changelogDate": "20181205202956",
+    "dto": "no",
+    "searchEngine": false,
+    "service": "serviceClass",
+    "entityTableName": "report_status",
+    "jpaMetamodelFiltering": true,
+    "pagination": "pagination"
+}

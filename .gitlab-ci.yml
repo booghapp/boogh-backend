@@ -1,0 +1,635 @@
+image: jhipster/jhipster:v5.7.0
+
+variables:
+    APP_NAME: boogh
+    DNS_PROVIDER: route53
+    NAMESPACE: boogh
+    IMAGE_PULL_SECRET: regcred
+
+cache:
+    key: "boogh"
+    paths:
+        - node_modules
+        - .maven
+
+stages:
+    - build
+    - test
+    - package
+    - release
+    - init
+    - predeploy
+    - deploy
+    - postdeploy
+    - analyze
+
+before_script:
+    - export MAVEN_USER_HOME=`pwd`/.maven
+
+maven-build:
+    stage: build
+    script: ./mvnw -q compile -Dmaven.repo.local=$MAVEN_USER_HOME
+
+maven-test:
+    stage: test
+    services:
+        - name: mdillon/postgis:9.6
+          alias: postgres
+    variables:
+        POSTGRES_DB: $APP_NAME
+        POSTGRES_USER: $APP_NAME
+        POSTGRES_PASSWORD: ""
+        SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/$APP_NAME
+        SPRING_DATASOURCE_PASSWORD: $POSTGRES_PASSWORD
+    script: ./mvnw -q test -Dmaven.repo.local=$MAVEN_USER_HOME -Dspring.profiles.active=test
+
+include:
+    - template: DAST.gitlab-ci.yml
+    - template: Container-Scanning.gitlab-ci.yml
+    - template: Dependency-Scanning.gitlab-ci.yml
+    - template: License-Management.gitlab-ci.yml
+    - template: SAST.gitlab-ci.yml
+
+sast:
+    stage: analyze
+    only:
+        - tags
+    except:
+        - branches
+    before_script:
+        - echo "Starting Static Application Security Testing (SAST) ..."
+
+maven-package:
+    stage: package
+    only:
+        - develop
+        - master
+    script:
+        - ./mvnw -q com.github.eirslett:frontend-maven-plugin:install-node-and-yarn -DnodeVersion=v8.9.4 -DyarnVersion=v1.6.0
+        - ./mvnw verify -Pprod -DskipTests -q -Dmaven.repo.local=$MAVEN_USER_HOME
+    artifacts:
+        paths:
+            - target/*.war
+        expire_in: 1 day
+
+docker-image:
+    stage: release
+    image: docker:stable
+    services:
+        - docker:stable-dind
+    only:
+        - develop
+        - master
+    variables:
+        VERSION: $CI_COMMIT_SHORT_SHA
+    dependencies:
+        - maven-package
+    before_script:
+        - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry.notofilter.com
+        - cp target/*.war src/main/docker
+    script:
+        - docker build -f src/main/docker/Dockerfile -t $CI_REGISTRY_IMAGE:$VERSION src/main/docker
+        - docker push $CI_REGISTRY_IMAGE:$VERSION
+
+cluster-init-dev:
+    stage: init
+    image: lwolf/kubectl_deployer:latest
+    only:
+        - develop
+    variables:
+        KUBE_CLUSTER: $KUBE_CLUSTER_DEV
+        KUBE_URL: $KUBE_URL_DEV
+        KUBE_TOKEN: $KUBE_TOKEN_DEV
+        CERT_AND_SECRET: $CERT_AND_SECRET_DEV
+        POSTGRES_DEPLOY: postgresql
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_DEV
+    environment:
+        name: dev
+    dependencies:
+        - docker-image
+    before_script:
+        - echo "Starting cluster prep"
+    script:
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./init.sh
+
+cluster-init-staging:
+    stage: init
+    image: lwolf/kubectl_deployer:latest
+    only:
+        - master
+    when: manual
+    variables:
+        KUBE_CLUSTER: $KUBE_CLUSTER_STAGING
+        KUBE_URL: $KUBE_URL_STAGING
+        KUBE_TOKEN: $KUBE_TOKEN_STAGING
+        CERT_AND_SECRET: $CERT_AND_SECRET_STAGING 
+        POSTGRES_DEPLOY: postgresql
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_STAGING
+    environment:
+        name: staging
+    dependencies:
+        - docker-image
+    before_script:
+        - echo "Starting cluster prep"
+    script:
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./init.sh
+
+get-prod-version:
+    stage: predeploy
+    image: docker:stable
+    services:
+        - docker:stable-dind
+    only:
+        - /^release\//
+    except:
+        - branches
+    #when: manual
+    variables:
+        VERSION: staging
+        GIT_STRATEGY: none
+    dependencies:
+        - docker-image
+    allow_failure: false
+    before_script:
+        - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry.notofilter.com
+    script:
+        # Get the current prod and tag it as previous-prod:
+        - docker pull $CI_REGISTRY_IMAGE:prod
+        - docker tag $CI_REGISTRY_IMAGE:prod $CI_REGISTRY_IMAGE:previous-prod
+        - docker push $CI_REGISTRY_IMAGE:previous-prod
+        # Get the latest staging image and tag it as prod for deploy-prod job:
+        - docker pull $CI_REGISTRY_IMAGE:$VERSION
+        - IMAGE_ID=`docker images --filter=reference=$CI_REGISTRY_IMAGE:$VERSION --format "{{.ID}}"`
+        - echo $IMAGE_ID
+        - IMAGE_SHA256=`docker inspect --format='{{.RepoDigests}}' $IMAGE_ID | awk -F@ '{print $2}' | awk -F] '{print $1}'`
+        - echo $IMAGE_SHA256
+        - docker pull $CI_REGISTRY_IMAGE@$IMAGE_SHA256
+        - docker tag $CI_REGISTRY_IMAGE@$IMAGE_SHA256 $CI_REGISTRY_IMAGE:prod
+        - docker push $CI_REGISTRY_IMAGE:prod
+
+deploy-dev:
+    stage: deploy
+    image: devth/helm
+    only:
+        - develop
+    variables:
+        VERSION: $CI_COMMIT_SHORT_SHA
+        ENVIRONMENT_NAME: dev
+        POSTGRES_DB: $APP_NAME
+        POSTGRES_USER: $APP_NAME
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_DEV
+        #SPRING_DATASOURCE_URL: jdbc:postgresql://$APP_NAME-postgres:5432/$APP_NAME
+        SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_DEPLOY}.${POSTGRES_NAMESPACE}.svc.cluster.local:5432/boogh
+        SPRING_DATASOURCE_PASSWORD: $POSTGRES_PASSWORD_DEV
+        SPRING_MAIL_USERNAME: $MAIL_USERNAME_DEV
+        SPRING_MAIL_PASSWORD: $MAIL_PASSWORD_DEV
+        JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET: $JWT_BASE64_SECRET_DEV
+        SPRING_PROFILES_ACTIVE: prod,swagger
+        APPLICATION_TELEGRAM_BOT_SECRET: $TELEGRAM_BOT_SECRET_DEV
+        APPLICATION_TELEGRAM_BOT_TOKEN: $TELEGRAM_BOT_TOKEN_DEV
+        APPLICATION_AWS_BACKEND_S3_BUCKET_NAME: $AWS_BACKEND_S3_BUCKET_NAME_DEV
+        APPLICATION_AWS_BACKEND_ACCESS_KEY_ID: $AWS_BACKEND_ACCESS_KEY_ID_DEV
+        APPLICATION_AWS_BACKEND_SECRET_ACCESS_KEY: $AWS_BACKEND_SECRET_ACCESS_KEY_DEV
+        APPLICATION_AWS_BACKEND_S3_LOCATION: $AWS_BACKEND_S3_LOCATION_DEV
+        APPLICATION_REDIS_PASSWORD: $REDIS_PASS_DEV
+        APPLICATION_REDIS_ADDRESS: redis://redis.${NAMESPACE}.svc.cluster.local:6379
+        APPLICATION_TWITTER_API_KEY: $TWITTER_API_KEY
+        APPLICATION_TWITTER_API_SECRET: $TWITTER_API_SECRET
+        APPLICATION_GOOGLE_CLIENT_ID: $GOOGLE_CLIENT_ID
+        APPLICATION_GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET
+        APPLICATION_GOOGLE_MAPS_API_KEY: $GOOGLE_MAPS_API_KEY_DEV
+        # K8s
+        KUBE_CLUSTER: $KUBE_CLUSTER_DEV
+        KUBE_URL: $KUBE_URL_DEV
+        KUBE_TOKEN: $KUBE_TOKEN_DEV
+        POSTGRES_DEPLOY: postgresql
+        INGRESS_NAME: $APP_NAME-ingress
+        DOMAIN: $DOMAIN_DEV
+        JAVA_APP: java
+        JAVA_URL: api.$APP_NAME.$DOMAIN_DEV
+        POSTGRES_IMAGE: mdillon/postgis:9.6
+        #POSTGRES_PVC: postgres-pvc
+        #POSTGRES_PVC_STORAGE: 10Gi
+        POSTGRES_NAMESPACE: default
+        WILDCARD_URL: "*.$DOMAIN_DEV"
+        WEBSITE_URL: $APP_NAME.$DOMAIN_DEV
+        CERT_AND_SECRET: $CERT_AND_SECRET_DEV
+        NO_OF_PODS: 2
+    dependencies:
+        - docker-image
+    before_script:
+        - echo "Starting deploy to $ENVIRONMENT_NAME K8s"
+    script:
+        # TODO: add backup cronjob
+        # TODO: retrieve db data from s3 dump backup
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./prepare.sh
+        - ./redis.sh
+        - ./deploy.sh
+
+deploy-staging:
+    stage: deploy
+    image: devth/helm
+    only:
+        - master
+    when: manual
+    allow_failure: false
+    variables:
+        VERSION: $CI_COMMIT_SHORT_SHA
+        ENVIRONMENT_NAME: staging
+        POSTGRES_DB: $APP_NAME
+        POSTGRES_USER: $APP_NAME
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_STAGING
+        #SPRING_DATASOURCE_URL: jdbc:postgresql://$APP_NAME-postgres:5432/$APP_NAME
+        SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_DEPLOY}.${POSTGRES_NAMESPACE}.svc.cluster.local:5432/boogh
+        SPRING_DATASOURCE_PASSWORD: $POSTGRES_PASSWORD_STAGING
+        SPRING_MAIL_USERNAME: $MAIL_USERNAME_STAGING
+        SPRING_MAIL_PASSWORD: $MAIL_PASSWORD_STAGING
+        JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET: $JWT_BASE64_SECRET_STAGING
+        SPRING_PROFILES_ACTIVE: prod,swagger
+        APPLICATION_TELEGRAM_BOT_SECRET: $TELEGRAM_BOT_SECRET_STAGING
+        APPLICATION_TELEGRAM_BOT_TOKEN: $TELEGRAM_BOT_TOKEN_STAGING
+        APPLICATION_AWS_BACKEND_S3_BUCKET_NAME: $AWS_BACKEND_S3_BUCKET_NAME_STAGING
+        APPLICATION_AWS_BACKEND_ACCESS_KEY_ID: $AWS_BACKEND_ACCESS_KEY_ID_STAGING
+        APPLICATION_AWS_BACKEND_SECRET_ACCESS_KEY: $AWS_BACKEND_SECRET_ACCESS_KEY_STAGING
+        APPLICATION_AWS_BACKEND_S3_LOCATION: $AWS_BACKEND_S3_LOCATION_STAGING
+        APPLICATION_REDIS_PASSWORD: $REDIS_PASS_STAGING
+        APPLICATION_REDIS_ADDRESS: redis://redis.${NAMESPACE}.svc.cluster.local:6379
+        APPLICATION_TWITTER_API_KEY: $TWITTER_API_KEY
+        APPLICATION_TWITTER_API_SECRET: $TWITTER_API_SECRET
+        APPLICATION_GOOGLE_CLIENT_ID: $GOOGLE_CLIENT_ID
+        APPLICATION_GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET
+        APPLICATION_GOOGLE_MAPS_API_KEY: $GOOGLE_MAPS_API_KEY_STAGING
+        # K8s
+        KUBE_CLUSTER: $KUBE_CLUSTER_STAGING
+        KUBE_URL: $KUBE_URL_STAGING
+        KUBE_TOKEN: $KUBE_TOKEN_STAGING
+        POSTGRES_DEPLOY: postgresql
+        INGRESS_NAME: $APP_NAME-ingress
+        DOMAIN: $DOMAIN_STAGING
+        JAVA_APP: java
+        JAVA_URL: api.$APP_NAME.$DOMAIN_STAGING
+        POSTGRES_IMAGE: mdillon/postgis:9.6
+        POSTGRES_NAMESPACE: default
+        WILDCARD_URL: "*.$DOMAIN_STAGING"
+        WEBSITE_URL: $APP_NAME.$DOMAIN_STAGING
+        CERT_AND_SECRET: $CERT_AND_SECRET_STAGING
+        NO_OF_PODS: 2
+    dependencies:
+        - docker-image
+    before_script:
+        - echo "Starting deploy to $ENVIRONMENT_NAME K8s"
+    script:
+        # TODO: add backup cronjob
+        # TODO: retrieve db data from s3 dump backup
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./prepare.sh
+        - ./redis.sh
+        - ./deploy.sh
+
+image-tag-staging:
+    stage: postdeploy
+    image: docker:stable
+    only:
+        - master
+    services:
+        - docker:stable-dind
+    variables:
+        VERSION: $CI_COMMIT_SHORT_SHA
+        GIT_STRATEGY: none
+    dependencies:
+        - deploy-staging
+    before_script:
+        - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry.notofilter.com
+    script:
+        - docker pull $CI_REGISTRY_IMAGE:staging 
+        - docker pull $CI_REGISTRY_IMAGE:$VERSION
+        - docker tag $CI_REGISTRY_IMAGE:staging $CI_REGISTRY_IMAGE:previous-staging
+        - docker images $CI_REGISTRY_IMAGE --format="{{ .Tag }}" | grep [0-9]
+        - docker tag $CI_REGISTRY_IMAGE:$VERSION $CI_REGISTRY_IMAGE:staging
+        - docker push $CI_REGISTRY_IMAGE:previous-staging
+        - docker push $CI_REGISTRY_IMAGE:staging
+
+rollback-staging:
+    stage: deploy
+    image: devth/helm
+    only:
+        - master
+    when: manual
+    variables:
+        VERSION: previous-staging
+        ENVIRONMENT_NAME: staging
+        POSTGRES_DB: $APP_NAME
+        POSTGRES_USER: $APP_NAME
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_STAGING
+        #SPRING_DATASOURCE_URL: jdbc:postgresql://$APP_NAME-postgres:5432/$APP_NAME
+        SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_DEPLOY}.${POSTGRES_NAMESPACE}.svc.cluster.local:5432/boogh
+        SPRING_DATASOURCE_PASSWORD: $POSTGRES_PASSWORD_STAGING
+        SPRING_MAIL_USERNAME: $MAIL_USERNAME_STAGING
+        SPRING_MAIL_PASSWORD: $MAIL_PASSWORD_STAGING
+        JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET: $JWT_BASE64_SECRET_STAGING
+        SPRING_PROFILES_ACTIVE: prod,swagger
+        APPLICATION_TELEGRAM_BOT_SECRET: $TELEGRAM_BOT_SECRET_STAGING
+        APPLICATION_TELEGRAM_BOT_TOKEN: $TELEGRAM_BOT_TOKEN_STAGING
+        APPLICATION_AWS_BACKEND_S3_BUCKET_NAME: $AWS_BACKEND_S3_BUCKET_NAME_STAGING
+        APPLICATION_AWS_BACKEND_ACCESS_KEY_ID: $AWS_BACKEND_ACCESS_KEY_ID_STAGING
+        APPLICATION_AWS_BACKEND_SECRET_ACCESS_KEY: $AWS_BACKEND_SECRET_ACCESS_KEY_STAGING
+        APPLICATION_AWS_BACKEND_S3_LOCATION: $AWS_BACKEND_S3_LOCATION_STAGING
+        APPLICATION_REDIS_PASSWORD: $REDIS_PASS_STAGING
+        APPLICATION_REDIS_ADDRESS: redis://redis.${NAMESPACE}.svc.cluster.local:6379
+        APPLICATION_TWITTER_API_KEY: $TWITTER_API_KEY
+        APPLICATION_TWITTER_API_SECRET: $TWITTER_API_SECRET
+        APPLICATION_GOOGLE_CLIENT_ID: $GOOGLE_CLIENT_ID
+        APPLICATION_GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET
+        APPLICATION_GOOGLE_MAPS_API_KEY: $GOOGLE_MAPS_API_KEY_STAGING
+        # K8s
+        KUBE_CLUSTER: $KUBE_CLUSTER_STAGING
+        KUBE_URL: $KUBE_URL_STAGING
+        KUBE_TOKEN: $KUBE_TOKEN_STAGING
+        POSTGRES_DEPLOY: postgresql
+        INGRESS_NAME: $APP_NAME-ingress
+        DOMAIN: $DOMAIN_STAGING
+        JAVA_APP: java
+        JAVA_URL: api.$APP_NAME.$DOMAIN_STAGING
+        POSTGRES_IMAGE: mdillon/postgis:9.6
+        POSTGRES_NAMESPACE: default
+        WILDCARD_URL: "*.$DOMAIN_STAGING"
+        WEBSITE_URL: $APP_NAME.$DOMAIN_STAGING
+        CERT_AND_SECRET: $CERT_AND_SECRET_STAGING
+        NO_OF_PODS: 2
+    before_script:
+        - echo "Rolling back version to previous on $ENVIRONMENT_NAME K8S"
+    script:
+        - echo "rolling back to version $VERSION"
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./redis.sh
+        - ./deploy.sh
+
+performance-dev:
+    stage: analyze
+    image: docker:git
+    services:
+        - docker:stable-dind
+    variables:
+        DOMAIN: $DOMAIN_DEV
+        WEBSITE_URL: $APP_NAME.$DOMAIN_DEV
+    only:
+        - tags
+    except:
+        - branches
+    dependencies:
+        - deploy-dev
+    allow_failure: true
+    before_script:
+        - echo "Starting website performance analysis at https://$WEBSITE_URL..."
+    script:
+        - mkdir gitlab-exporter
+        - wget -O ./gitlab-exporter/index.js https://gitlab.com/gitlab-org/gl-performance/raw/master/index.js
+        - mkdir sitespeed-results
+        - docker run --shm-size=1g --rm -v "$(pwd)":/sitespeed.io sitespeedio/sitespeed.io:6.3.1 --plugins.add ./gitlab-exporter --outputFolder sitespeed-results https://$WEBSITE_URL
+        - mv sitespeed-results/data/performance.json performance.json
+    artifacts:
+        paths:
+          - performance.json
+          - sitespeed-results/
+
+dast:
+#dast-staging:
+    stage: analyze
+    variables:
+        DOMAIN: $DOMAIN_STAGING
+        WEBSITE_URL: $APP_NAME.$DOMAIN_STAGING
+    only:
+        - tags
+    except:
+        - branches
+    dependencies:
+        - deploy-staging
+    allow_failure: true
+    before_script:
+        - echo "Starting Dynamic Application Security Testing (DAST) ..."
+
+performance-staging:
+    stage: analyze
+    image: docker:git
+    services:
+        - docker:stable-dind
+    variables:
+        DOMAIN: $DOMAIN_STAGING
+        WEBSITE_URL: $APP_NAME.$DOMAIN_STAGING
+    only:
+        - tags
+    except:
+        - branches
+    dependencies:
+        - deploy-staging
+    allow_failure: true
+    before_script:
+        - echo "Starting website performance analysis at https://$WEBSITE_URL..."
+    script:
+        - mkdir gitlab-exporter
+        - wget -O ./gitlab-exporter/index.js https://gitlab.com/gitlab-org/gl-performance/raw/master/index.js
+        - mkdir sitespeed-results
+        - docker run --shm-size=1g --rm -v "$(pwd)":/sitespeed.io sitespeedio/sitespeed.io:6.3.1 --plugins.add ./gitlab-exporter --outputFolder sitespeed-results https://$WEBSITE_URL
+        - mv sitespeed-results/data/performance.json performance.json
+    artifacts:
+        paths:
+          - performance.json
+          - sitespeed-results/
+
+cluster-init-prod:
+    stage: init
+    image: lwolf/kubectl_deployer:latest
+    only:
+        - /^release\//
+    except:
+        - branches
+    when: manual
+    variables:
+        KUBE_CLUSTER: $KUBE_CLUSTER_PROD
+        KUBE_URL: $KUBE_URL_PROD
+        KUBE_TOKEN: $KUBE_TOKEN_PROD
+        CERT_AND_SECRET: $CERT_AND_SECRET_PROD
+        POSTGRES_DEPLOY: postgresql
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_PROD
+    environment:
+        name: prod
+    dependencies:
+        - docker-image
+    before_script:
+        - echo "Starting cluster prep"
+    script:
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./init.sh
+
+deploy-prod:
+    stage: deploy
+    image: devth/helm
+    only:
+        - /^release\//
+    except:
+        - branches
+    when: manual
+    allow_failure: false
+    variables:
+        VERSION: prod
+        ENVIRONMENT_NAME: production
+        POSTGRES_DB: $APP_NAME
+        POSTGRES_USER: $APP_NAME
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_PROD
+        SPRING_DATASOURCE_URL: jdbc:postgresql://$SPRING_DATASOURCE_URL_PROD:5432/boogh
+        SPRING_DATASOURCE_PASSWORD: $POSTGRES_PASSWORD_PROD
+        SPRING_MAIL_USERNAME: $MAIL_USERNAME_PROD
+        SPRING_MAIL_PASSWORD: $MAIL_PASSWORD_PROD
+        JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET: $JWT_BASE64_SECRET_PROD
+        SPRING_PROFILES_ACTIVE: prod
+        APPLICATION_TELEGRAM_BOT_SECRET: $TELEGRAM_BOT_SECRET_PROD
+        APPLICATION_TELEGRAM_BOT_TOKEN: $TELEGRAM_BOT_TOKEN_PROD
+        APPLICATION_AWS_BACKEND_S3_BUCKET_NAME: $AWS_BACKEND_S3_BUCKET_NAME_PROD
+        APPLICATION_AWS_BACKEND_ACCESS_KEY_ID: $AWS_BACKEND_ACCESS_KEY_ID_PROD
+        APPLICATION_AWS_BACKEND_SECRET_ACCESS_KEY: $AWS_BACKEND_SECRET_ACCESS_KEY_PROD
+        APPLICATION_AWS_BACKEND_S3_LOCATION: $AWS_BACKEND_S3_LOCATION_PROD
+        APPLICATION_REDIS_PASSWORD: $REDIS_PASS_PROD
+        APPLICATION_REDIS_ADDRESS: redis://redis.${NAMESPACE}.svc.cluster.local:6379
+        APPLICATION_TWITTER_API_KEY: $TWITTER_API_KEY
+        APPLICATION_TWITTER_API_SECRET: $TWITTER_API_SECRET
+        APPLICATION_GOOGLE_CLIENT_ID: $GOOGLE_CLIENT_ID
+        APPLICATION_GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET
+        APPLICATION_GOOGLE_MAPS_API_KEY: $GOOGLE_MAPS_API_KEY_PROD
+        # K8s
+        KUBE_CLUSTER: $KUBE_CLUSTER_PROD
+        KUBE_URL: $KUBE_URL_PROD
+        KUBE_TOKEN: $KUBE_TOKEN_PROD
+        POSTGRES_DEPLOY: postgresql
+        INGRESS_NAME: $APP_NAME-ingress
+        DOMAIN: $DOMAIN_PROD
+        JAVA_APP: java
+        JAVA_URL: api.$DOMAIN_PROD
+        POSTGRES_IMAGE: mdillon/postgis:9.6
+        POSTGRES_NAMESPACE: default
+        WILDCARD_URL: "*.$DOMAIN_PROD"
+        WEBSITE_URL: $DOMAIN_PROD
+        CERT_AND_SECRET: $CERT_AND_SECRET_PROD
+        NO_OF_PODS: 3
+    dependencies:
+        - get-prod-version
+        #- docker-image
+    before_script:
+        - echo "Starting deploy to $ENVIRONMENT_NAME K8s"
+    script:
+        # TODO: add backup cronjob
+        # TODO: retrieve db data from s3 dump backup
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./redis.sh
+        - ./deploy.sh
+
+rollback-prod:
+    stage: deploy
+    image: devth/helm
+    only:
+        - /^release\//
+    except:
+        - branches
+    when: manual
+    variables:
+        VERSION: previous-prod
+        ENVIRONMENT_NAME: production
+        POSTGRES_DB: $APP_NAME
+        POSTGRES_USER: $APP_NAME
+        POSTGRES_PASSWORD: $POSTGRES_PASSWORD_PROD
+        SPRING_DATASOURCE_URL: jdbc:postgresql://$SPRING_DATASOURCE_URL_PROD:5432/boogh
+        SPRING_DATASOURCE_PASSWORD: $POSTGRES_PASSWORD_PROD
+        SPRING_MAIL_USERNAME: $MAIL_USERNAME_PROD
+        SPRING_MAIL_PASSWORD: $MAIL_PASSWORD_PROD
+        JHIPSTER_SECURITY_AUTHENTICATION_JWT_BASE64_SECRET: $JWT_BASE64_SECRET_PROD
+        SPRING_PROFILES_ACTIVE: prod
+        APPLICATION_TELEGRAM_BOT_SECRET: $TELEGRAM_BOT_SECRET_PROD
+        APPLICATION_TELEGRAM_BOT_TOKEN: $TELEGRAM_BOT_TOKEN_PROD
+        APPLICATION_AWS_BACKEND_S3_BUCKET_NAME: $AWS_BACKEND_S3_BUCKET_NAME_PROD
+        APPLICATION_AWS_BACKEND_ACCESS_KEY_ID: $AWS_BACKEND_ACCESS_KEY_ID_PROD
+        APPLICATION_AWS_BACKEND_SECRET_ACCESS_KEY: $AWS_BACKEND_SECRET_ACCESS_KEY_PROD
+        APPLICATION_AWS_BACKEND_S3_LOCATION: $AWS_BACKEND_S3_LOCATION_PROD
+        APPLICATION_REDIS_PASSWORD: $REDIS_PASS_PROD
+        APPLICATION_REDIS_ADDRESS: redis://redis.${NAMESPACE}.svc.cluster.local:6379
+        APPLICATION_TWITTER_API_KEY: $TWITTER_API_KEY
+        APPLICATION_TWITTER_API_SECRET: $TWITTER_API_SECRET
+        APPLICATION_GOOGLE_CLIENT_ID: $GOOGLE_CLIENT_ID
+        APPLICATION_GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET
+        APPLICATION_GOOGLE_MAPS_API_KEY: $GOOGLE_MAPS_API_KEY_PROD
+        # K8s
+        KUBE_CLUSTER: $KUBE_CLUSTER_PROD
+        KUBE_URL: $KUBE_URL_PROD
+        KUBE_TOKEN: $KUBE_TOKEN_PROD
+        POSTGRES_DEPLOY: postgresql
+        INGRESS_NAME: $APP_NAME-ingress
+        DOMAIN: $DOMAIN_PROD
+        JAVA_APP: java
+        JAVA_URL: api.$DOMAIN_PROD
+        POSTGRES_IMAGE: mdillon/postgis:9.6
+        POSTGRES_NAMESPACE: default
+        WILDCARD_URL: "*.$DOMAIN_PROD"
+        WEBSITE_URL: $DOMAIN_PROD
+        CERT_AND_SECRET: $CERT_AND_SECRET_PROD
+        NO_OF_PODS: 3
+    before_script:
+        - echo "Rolling back version to previous on $ENVIRONMENT_NAME K8S"
+    script:
+        - echo "rolling back to version $VERSION"
+        - cd deployment/k8s
+        - ./cluster_connect.sh
+        - ./redis.sh
+        - ./deploy.sh
+
+#dast-prod:
+#    stage: analyze
+#    variables:
+#        DOMAIN: $DOMAIN_PROD
+#        WEBSITE_URL: $DOMAIN_PROD
+#    only:
+#        - tags
+#    except:
+#        - branches
+#    dependencies:
+#        - deploy-prod
+#    allow_failure: true
+#    before_script:
+#        - echo "Starting Dynamic Application Security Testing (DAST) ..."
+
+performance-prod:
+    stage: analyze
+    image: docker:git
+    services:
+        - docker:stable-dind
+    variables:
+        DOMAIN: $DOMAIN_PROD
+        WEBSITE_URL: $DOMAIN_PROD
+    only:
+        - tags
+    except:
+        - branches
+    dependencies:
+        - deploy-prod
+    allow_failure: true
+    before_script:
+        - echo "Starting website performance analysis at https://$WEBSITE_URL..."
+    script:
+        - mkdir gitlab-exporter
+        - wget -O ./gitlab-exporter/index.js https://gitlab.com/gitlab-org/gl-performance/raw/master/index.js
+        - mkdir sitespeed-results
+        - docker run --shm-size=1g --rm -v "$(pwd)":/sitespeed.io sitespeedio/sitespeed.io:6.3.1 --plugins.add ./gitlab-exporter --outputFolder sitespeed-results https://$WEBSITE_URL
+        - mv sitespeed-results/data/performance.json performance.json
+    artifacts:
+        paths:
+          - performance.json
+          - sitespeed-results/
+
+

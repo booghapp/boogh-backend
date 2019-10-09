@@ -1,0 +1,47 @@
+<?xml version="1.1" encoding="UTF-8" standalone="no"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.5.xsd">
+    <changeSet id="load-sample-data" author="Zachary Chen">
+        <loadUpdateData catalogName="cat"
+                          file="data-dump/boogh_public_jhi_user.csv"
+                          schemaName="public"
+                          tableName="jhi_user"
+                          primaryKey="id">
+        </loadUpdateData>
+        <loadUpdateData catalogName="cat"
+                        file="data-dump/boogh_public_jhi_user_authority.csv"
+                        schemaName="public"
+                        tableName="jhi_user_authority"
+                        primaryKey="user_id,authority_name">
+        </loadUpdateData>
+        <loadUpdateData catalogName="cat"
+                        file="data-dump/boogh_public_report.csv"
+                        schemaName="public"
+                        tableName="report"
+                        primaryKey="id">
+        </loadUpdateData>
+        <loadUpdateData catalogName="cat"
+                        file="data-dump/boogh_public_reporter.csv"
+                        schemaName="public"
+                        tableName="reporter"
+                        primaryKey="id">
+        </loadUpdateData>
+        <loadUpdateData catalogName="cat"
+                        file="data-dump/boogh_public_report_status.csv"
+                        schemaName="public"
+                        tableName="report_status"
+                        primaryKey="id">
+        </loadUpdateData>
+        <loadUpdateData catalogName="cat"
+                        file="data-dump/boogh_public_vote.csv"
+                        schemaName="public"
+                        tableName="vote"
+                        primaryKey="id">
+        </loadUpdateData>
+        <loadUpdateData catalogName="cat"
+                        file="data-dump/boogh_public_comment.csv"
+                        schemaName="public"
+                        tableName="comment"
+                        primaryKey="id">
+        </loadUpdateData>
+    </changeSet>
+</databaseChangeLog>

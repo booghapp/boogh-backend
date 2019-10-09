@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.5.xsd">
+
+    <include file="config/liquibase/changelog/00000000000000_initial_schema.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205200922_added_entity_Reporter.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205202009_added_entity_Report.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205202956_added_entity_ReportStatus.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205205205_added_entity_Comment.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205205502_added_entity_Vote.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190619183134_added_entity_Honk.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190624145020_added_entity_Document.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190625163716_added_entity_QA.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190708174000_added_entity_TelegramChat.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190808183436_added_entity_Feedback.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190815142752_added_entity_Memcache.xml" relativeToChangelogFile="false"/>
+    <!-- jhipster-needle-liquibase-add-changelog - JHipster will add liquibase changelogs here -->
+    <include file="config/liquibase/changelog/20181205200922_added_entity_constraints_Reporter.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205202009_added_entity_constraints_Report.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205202956_added_entity_constraints_ReportStatus.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205205205_added_entity_constraints_Comment.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20181205205502_added_entity_constraints_Vote.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190207221509_changelog.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190208154015_changelog.xml" relativeToChangelogFile="false"/>
+    <!--<include file="config/liquibase/changelog/20190226191710_changelog.xml" relativeToChangelogFile="false"/> -->
+    <include file="config/liquibase/changelog/20190327153405_changelog.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190618143124_changelog.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190618150718_changelog.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190619144044_changelog.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190619154612_changelog.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190619161652_changelog.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190619183134_added_entity_constraints_Honk.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190708174000_added_entity_constraints_TelegramChat.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20190815142752_added_entity_constraints_Memcache.xml" relativeToChangelogFile="false"/>
+    <!-- jhipster-needle-liquibase-add-constraints-changelog - JHipster will add liquibase constraints changelogs here -->
+</databaseChangeLog>
